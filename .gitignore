@@ -1,0 +1,93 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# If you use migrations but want to ignore them (optional)
+# migrations/
+# **/migrations/
+
+# Pytest cache
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+
+# VS Code settings
+.vscode/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# celery beat schedule file
+celerybeat-schedule
+
+# Sphinx documentation build
+docs/_build/
+
+# Environments
+.env
+.env.*
+
+# Logs
+*.log
+
+# JetBrains IDEs
+*.iml
+*.iws
+.idea/
+
+# Static files (if you manage static in repo, remove this)
+staticfiles/
+
+# Media files (if you upload media files locally)
+media/
+
+# Others
+*.swp
+*.bak
+*.tmp
