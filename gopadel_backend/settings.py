@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-from decouple import config
+from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -26,7 +26,8 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='')
 
 
 # Application definition
@@ -45,6 +46,7 @@ INSTALLED_APPS = [
     'cities',
     'roles',
     'categories',
+    'tournaments',
 ]
 
 MIDDLEWARE = [
@@ -149,12 +151,6 @@ REST_FRAMEWORK = {
     # ],
 }
 
-SPECTACULAR_SETTINGS = {
-    'TITLE': 'GoPadel API',
-    'DESCRIPTION': 'API REST para la gestión de torneos de pádel',
-    'VERSION': '1.0.0',
-}
-
 AUTH_USER_MODEL = 'users.CustomUser'
 
 # Opcional: lifetimes de tokens (ajusta a gusto)
@@ -167,6 +163,7 @@ SIMPLE_JWT = {
 # Opcional pero útil: mostrar Bearer en la doc de Spectacular
 SPECTACULAR_SETTINGS = {
     'TITLE': 'GoPadel API',
+    'DESCRIPTION': 'API REST para la gestión de torneos de pádel',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENTS': {

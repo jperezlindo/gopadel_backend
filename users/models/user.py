@@ -1,4 +1,4 @@
-from typing import Any
+# users/models/user.py
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from users.models.user_manager import CustomUserManager
@@ -15,21 +15,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     is_active = models.BooleanField(default=True)
     is_deleted = models.BooleanField(default=False)
-    is_staff = models.BooleanField(default=False)  # ← necesario para el admin
+    is_staff = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # Relaciones
-    facility_id = models.ForeignKey(Facility, on_delete=models.SET_NULL, null=True, blank=True)
-    city_id = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True)
-    rol_id = models.ForeignKey(Rol, on_delete=models.SET_NULL, null=True, blank=True)
+    facility_id = models.ForeignKey(Facility, on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
+    city_id = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
+    rol_id = models.ForeignKey(Rol, on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['name', 'last_name']
 
-    objects: CustomUserManager = CustomUserManager() 
+    objects = CustomUserManager()   # sin anotación de tipo para evitar warnings
 
     def __str__(self):
         return self.email
-
