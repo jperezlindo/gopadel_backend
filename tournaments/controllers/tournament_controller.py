@@ -62,15 +62,6 @@ class TournamentDetailView(APIView):
     def patch(self, request, pk: int) -> Response:
         return self._update(request, pk, partial=True)
 
-    def delete(self, request, pk: int) -> Response:
-        try:
-            self.service.delete(pk)
-            return success_response({"message": "Deleted successfully"}, status.HTTP_200_OK)
-        except ValidationError:
-            return error_response({"detail": "Tournament not found."}, status.HTTP_404_NOT_FOUND)
-        except Exception:
-            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     def _update(self, request, pk: int, partial: bool) -> Response:
         # Traemos la instancia para validar contra el estado actual
         try:
@@ -89,4 +80,13 @@ class TournamentDetailView(APIView):
             return error_response(payload, status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(f"Error in Tournament Update: {e}")
+            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self, request, pk: int) -> Response:
+        try:
+            self.service.delete(pk)
+            return success_response({"message": "Deleted successfully"}, status.HTTP_200_OK)
+        except ValidationError:
+            return error_response({"detail": "Tournament not found."}, status.HTTP_404_NOT_FOUND)
+        except Exception:
             return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)

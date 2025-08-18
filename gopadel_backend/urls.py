@@ -32,5 +32,10 @@ urlpatterns = [
 
     # Users API
     path('api/v1/users/', include('users.urls.user_urls')),
+
+    # Tournaments API
     path('api/v1/tournaments/', include('tournaments.urls.tournament_urls')),
+
+    # Players API
+    path('api/v1/players/', include('players.urls.player_urls')),
 ]

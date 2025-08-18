@@ -20,7 +20,7 @@ class UserRepository(UserRepositoryInterface):
     def get_all_users(self) -> Any:
         return (
             CustomUser.objects
-            .select_related("facility_id", "city_id", "rol_id")
+            .select_related("facility", "city", "rol")
             .filter(is_active=True, is_deleted=False, is_superuser=False)
         )
 
@@ -28,7 +28,7 @@ class UserRepository(UserRepositoryInterface):
         try:
             return (
                 CustomUser.objects
-                .select_related("facility_id", "city_id", "rol_id")
+                .select_related("facility", "city", "rol")
                 .get(id=user_id, is_deleted=False)
             )
         except ObjectDoesNotExist:
@@ -38,7 +38,7 @@ class UserRepository(UserRepositoryInterface):
         # Usamos el manager para asegurar hash de password y defaults
         password = data.pop("password", None)
         if password is not None:
-            return CustomUser.objects.create_user(password=password, **data)
+            return CustomUser.objects.create_user(password=password, **data) # type: ignore
         return CustomUser.objects.create_user(**data)  # type: ignore[arg-type]
 
     def update_user(self, user_id: int, data: dict) -> Optional[CustomUser]:

@@ -24,7 +24,8 @@ class UserListCreateView(APIView):
             items = self.service.list()
             data = UserSerializer(items, many=True).data
             return success_response(data, status.HTTP_200_OK)
-        except Exception:
+        except Exception as e:
+            print('Error occurred while listing users:', e)
             return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request) -> Response:
@@ -37,7 +38,8 @@ class UserListCreateView(APIView):
         except ValidationError as e:
             payload = getattr(e, "message_dict", {"detail": str(e)})
             return error_response(payload, status.HTTP_400_BAD_REQUEST)
-        except Exception:
+        except Exception as e:
+            # print('Error occurred while creating user:', e)
             return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

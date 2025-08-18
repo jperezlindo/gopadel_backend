@@ -20,9 +20,28 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    facility_id = models.ForeignKey(Facility, on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
-    city_id = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
-    rol_id = models.ForeignKey(Rol, on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
+    facility = models.ForeignKey(
+        Facility, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="users"
+    )
+    
+    city = models.ForeignKey(
+        City, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="users"
+    )
+    rol = models.ForeignKey(
+        Rol, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="users"
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['name', 'last_name']

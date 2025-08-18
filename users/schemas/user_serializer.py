@@ -12,6 +12,10 @@ User = get_user_model()
 
 # ---------- Read Serializer (show/list) ----------
 class UserSerializer(serializers.ModelSerializer):
+    facility_id = serializers.IntegerField(source='facility.id', read_only=True)
+    city_id = serializers.IntegerField(source='city.id', read_only=True)
+    rol_id = serializers.IntegerField(source='rol.id', read_only=True)
+
     # Nota: Al ser FK, DRF representa por defecto como PK (entero),
     # no hace falta declarar IntegerField; solo los marcamos read_only.
     class Meta:
@@ -48,13 +52,25 @@ class CreateUserSerializer(serializers.ModelSerializer):
 
     # Aceptamos IDs y DRF los mapea a las FKs (los nombres ya coinciden con el modelo)
     facility_id = serializers.PrimaryKeyRelatedField(
-        queryset=Facility.objects.all(), required=False, allow_null=True, write_only=True
+        queryset=Facility.objects.all(),
+        source="facility",
+        required=False,
+        allow_null=True,
+        write_only=True
     )
     city_id = serializers.PrimaryKeyRelatedField(
-        queryset=City.objects.all(), required=False, allow_null=True, write_only=True
+        queryset=City.objects.all(),
+        source="city",
+        required=False,
+        allow_null=True,
+        write_only=True
     )
     rol_id = serializers.PrimaryKeyRelatedField(
-        queryset=Rol.objects.all(), required=False, allow_null=True, write_only=True
+        queryset=Rol.objects.all(),
+        source="rol",
+        required=False,
+        allow_null=True,
+        write_only=True
     )
 
     class Meta:
