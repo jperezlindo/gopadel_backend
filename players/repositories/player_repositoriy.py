@@ -16,11 +16,11 @@ class PlayerRepository(PlayerRepositoryInterface):
     - delete_player: soft delete (is_deleted=True) + desactiva (is_active=False) y retorna bool.
     """
     def get_all_players(self):
-        return Player.objects.filter(is_active=True, is_deleted=False)
+        return Player.objects.filter(is_active=True)
 
     def get_player_by_id(self, player_id: int) -> Optional[Player]:
         try:
-            return Player.objects.get(id=player_id, is_deleted=False)
+            return Player.objects.get(id=player_id, is_active=True)
         except ObjectDoesNotExist:
             return None
 
@@ -31,7 +31,6 @@ class PlayerRepository(PlayerRepositoryInterface):
         player = self.get_player_by_id(player_id)
         if player is None:
             return None
-
         for key, value in data.items():
             setattr(player, key, value)
 

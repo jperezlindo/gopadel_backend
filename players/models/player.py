@@ -25,10 +25,10 @@ class Player(models.Model):
         db_index=True
     )
     
-    category = models.OneToOneField(
+    category = models.ForeignKey(
         Category,
         on_delete=models.SET_NULL,
-        related_name="category",
+        related_name="players",
         db_index=True,
         null=True,
         blank=True

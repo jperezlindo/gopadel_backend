@@ -2,6 +2,8 @@
 from typing import Any, Dict, Optional
 from rest_framework import serializers
 from players.models.player import Player
+from users.models.user import CustomUser
+from categories.models.category import Category
 
 class PlayerSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id', read_only=True)
@@ -24,14 +26,14 @@ class PlayerSerializer(serializers.ModelSerializer):
 
 class CreatePlayerSerializer(serializers.ModelSerializer):
     user_id = serializers.PrimaryKeyRelatedField(
-        queryset=Player.objects.all(),
+        queryset=CustomUser.objects.filter(is_active=True),
         source='user',
         write_only=True
     )
     category_id = serializers.PrimaryKeyRelatedField(
-        queryset=Player.objects.all(),
+        queryset=Category.objects.filter(is_active=True),
         source='category',
-        write_only=True
+        write_only=True,
     )
 
     class Meta:
@@ -44,6 +46,7 @@ class CreatePlayerSerializer(serializers.ModelSerializer):
             'user_id',
             'category_id'
         ]
+        read_only_fields = ['user_id', 'category_id']
 
     def validate_nick_name(self, value: str) -> str:
         v = (value or '').strip()
@@ -65,15 +68,14 @@ class CreatePlayerSerializer(serializers.ModelSerializer):
 
 class UpdatePlayerSerializer(serializers.ModelSerializer):
     user_id = serializers.PrimaryKeyRelatedField(
-        queryset=Player.objects.all(),
+        queryset=CustomUser.objects.filter(is_active=True),
         source='user',
         write_only=True
     )
-    
     category_id = serializers.PrimaryKeyRelatedField(
-        queryset=Player.objects.all(),
+        queryset=Category.objects.filter(is_active=True),
         source='category',
-        write_only=True
+        write_only=True,
     )
 
     class Meta:
@@ -97,9 +99,7 @@ class UpdatePlayerSerializer(serializers.ModelSerializer):
         return v
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
-        position = attrs.get('position')
-        if position not in ['DRIVE', 'REVEZ']:
-            raise serializers.ValidationError("La posición debe ser: 'DRIVE' o 'REVEZ'.")
+        print('Desde el player serializer func validate')
         return attrs
 
     def update(self, instance: Player, validated_data: Dict[str, Any]) -> Player:
@@ -109,3 +109,10 @@ class UpdatePlayerSerializer(serializers.ModelSerializer):
         instance.is_active = validated_data.get('is_active', instance.is_active)
         instance.save()
         return instance
+    
+class PlayerMiniSerializer(serializers.ModelSerializer):
+    category_id = serializers.IntegerField(source="category.id", read_only=True)
+
+    class Meta:
+        model = Player
+        fields = ["id", "nick_name", "position", "level", "is_active", "category_id"]

@@ -20,7 +20,7 @@ class UserRepository(UserRepositoryInterface):
     def get_all_users(self) -> Any:
         return (
             CustomUser.objects
-            .select_related("facility", "city", "rol")
+            .select_related("facility", "city", "rol", "player")
             .filter(is_active=True, is_deleted=False, is_superuser=False)
         )
 
@@ -28,7 +28,7 @@ class UserRepository(UserRepositoryInterface):
         try:
             return (
                 CustomUser.objects
-                .select_related("facility", "city", "rol")
+                .select_related("facility", "city", "rol", "player")
                 .get(id=user_id, is_deleted=False)
             )
         except ObjectDoesNotExist:

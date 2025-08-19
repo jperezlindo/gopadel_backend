@@ -7,6 +7,8 @@ from facilities.models import Facility
 from cities.models import City
 from roles.models import Rol
 
+from players.schemas.player_serializer import PlayerMiniSerializer
+
 User = get_user_model()
 
 
@@ -15,6 +17,7 @@ class UserSerializer(serializers.ModelSerializer):
     facility_id = serializers.IntegerField(source='facility.id', read_only=True)
     city_id = serializers.IntegerField(source='city.id', read_only=True)
     rol_id = serializers.IntegerField(source='rol.id', read_only=True)
+    player = PlayerMiniSerializer(read_only=True) # Usamos el mini serializer para evitar cargar todo el Player
 
     # Nota: Al ser FK, DRF representa por defecto como PK (entero),
     # no hace falta declarar IntegerField; solo los marcamos read_only.
@@ -34,6 +37,7 @@ class UserSerializer(serializers.ModelSerializer):
             "facility_id",
             "city_id",
             "rol_id",
+            "player"
         ]
         read_only_fields = [
             "id",
