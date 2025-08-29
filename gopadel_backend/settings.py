@@ -47,7 +47,8 @@ INSTALLED_APPS = [
     'roles',
     'categories',
     'tournaments',
-    'players'
+    'players',
+    'tournament_categories',
 ]
 
 MIDDLEWARE = [

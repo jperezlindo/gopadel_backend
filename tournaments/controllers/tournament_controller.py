@@ -1,3 +1,4 @@
+# tournaments/controllers/tournament_controller.py
 from typing import Any
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,6 +15,10 @@ from utils.response_handler import success_response, error_response
 
 
 class TournamentListCreateView(APIView):
+    """
+    GET  /api/v1/tournaments/     -> Lista torneos (incluye categories via prefetch)
+    POST /api/v1/tournaments/     -> Crea torneo + categories inline (service.create)
+    """
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = TournamentService()
@@ -36,12 +41,18 @@ class TournamentListCreateView(APIView):
         except ValidationError as e:
             payload = getattr(e, "message_dict", {"detail": str(e)})
             return error_response(payload, status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            # print(f"Error in TournamentListCreateView: {e}")
+        except Exception:
             return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class TournamentDetailView(APIView):
+    """
+    GET    /api/v1/tournaments/<pk>/
+    PUT    /api/v1/tournaments/<pk>/
+    PATCH  /api/v1/tournaments/<pk>/
+    DELETE /api/v1/tournaments/<pk>/
+    * Update NO toca categories por ahora (solo campos del torneo).
+    """
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = TournamentService()
@@ -63,7 +74,6 @@ class TournamentDetailView(APIView):
         return self._update(request, pk, partial=True)
 
     def _update(self, request, pk: int, partial: bool) -> Response:
-        # Traemos la instancia para validar contra el estado actual
         try:
             instance = self.service.get(pk)
         except ValidationError:
@@ -78,8 +88,7 @@ class TournamentDetailView(APIView):
         except ValidationError as e:
             payload = getattr(e, "message_dict", {"detail": str(e)})
             return error_response(payload, status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            print(f"Error in Tournament Update: {e}")
+        except Exception:
             return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def delete(self, request, pk: int) -> Response:
