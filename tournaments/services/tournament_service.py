@@ -100,7 +100,7 @@ class TournamentService:
         # 4) Cargar existentes del torneo
         existing_qs = TournamentCategory.objects.select_related("category").filter(tournament_id=tournament_id)
         existing = list(existing_qs)
-        existing_by_id = {tc.id: tc for tc in existing}
+        existing_by_id = {tc.id: tc for tc in existing} # type: ignore
 
         to_update: List[TournamentCategory] = []
         to_create: List[TournamentCategory] = []
@@ -145,7 +145,7 @@ class TournamentService:
                 to_create.append(inst)
 
         # 6) DELETE: categorías existentes no referenciadas en el payload
-        to_delete_ids = [tc.id for tc in existing if tc.id not in payload_ids]
+        to_delete_ids = [tc.id for tc in existing if tc.id not in payload_ids] # type: ignore
 
         # 7) Persistir cambios
         try:
@@ -162,7 +162,7 @@ class TournamentService:
             raise DjangoValidationError({"categories": ["Tournament + name must be unique."]}) from e
 
         # 8) Devolver instancia fresquita con prefetch (usamos el repo)
-        return self.get(instance.id)
+        return self.get(instance.id) # type: ignore
 
     def delete(self, tournament_id: int) -> None:
         ok = self.repository.delete_tournament(tournament_id)

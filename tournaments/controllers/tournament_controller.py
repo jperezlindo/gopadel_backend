@@ -41,7 +41,8 @@ class TournamentListCreateView(APIView):
         except ValidationError as e:
             payload = getattr(e, "message_dict", {"detail": str(e)})
             return error_response(payload, status.HTTP_400_BAD_REQUEST)
-        except Exception:
+        except Exception as e:
+            print("Error en TournamentListCreateView.post:", e)
             return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -74,6 +75,7 @@ class TournamentDetailView(APIView):
         return self._update(request, pk, partial=True)
 
     def _update(self, request, pk: int, partial: bool) -> Response:
+        print("TournamentDetailView._update called with:", pk, request.data, "partial =", partial)
         try:
             instance = self.service.get(pk)
         except ValidationError:

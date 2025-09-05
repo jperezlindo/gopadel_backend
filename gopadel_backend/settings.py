@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    "corsheaders",
     'rest_framework',
     'drf_spectacular',
     'users',
@@ -53,13 +54,14 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 ROOT_URLCONF = 'gopadel_backend.urls'
@@ -179,3 +181,18 @@ SPECTACULAR_SETTINGS = {
     },
     'SECURITY': [{'bearerAuth': []}],
 }
+
+# Opción segura (recomendada en dev apuntando solo al frontend)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# Si vas a usar cookies/sesiones entre dominios:
+# CORS_ALLOW_CREDENTIALS = True
+
+# Si usas CSRF (session auth) agrega:
+# CSRF_TRUSTED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+# Solo para DEV (no recomendado en prod):
+# CORS_ALLOW_ALL_ORIGINS = True
