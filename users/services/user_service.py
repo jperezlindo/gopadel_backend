@@ -1,6 +1,7 @@
 # users/services/user_service.py
 from typing import Any, Optional, Dict
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction  # <- nuevo
 
 from users.models.user import CustomUser
 from users.repositories.user_repository import UserRepository
@@ -20,19 +21,23 @@ class UserService:
         return instance
 
     def create(self, data: Dict) -> CustomUser:
-        instance = self.repository.create_user(data)
-        # Validaciones de modelo (si algo falla, levanta DjangoValidationError)
-        instance.full_clean()
-        instance.save()
-        return instance
+        # NOTA: el serializer ya normaliza/valida email y FK *_id -> FK reales
+        with transaction.atomic():  # <- asegura atomicidad y que IntegrityError suba limpio
+            instance = self.repository.create_user(data)
+            # Validaciones de modelo (unicidad, formatos, etc.)
+            instance.full_clean()
+            instance.save()
+            return instance
 
     def update(self, user_id: int, data: Dict) -> CustomUser:
-        instance = self.repository.update_user(user_id, data)
-        if not instance:
-            raise DjangoValidationError({"detail": "User not found."})
-        instance.full_clean()
-        instance.save()
-        return instance
+        with transaction.atomic():
+            instance = self.repository.update_user(user_id, data)
+            if not instance:
+                raise DjangoValidationError({"detail": "User not found."})
+            # No cambiamos password acá (endpoint aparte)
+            instance.full_clean()
+            instance.save()
+            return instance
 
     def delete(self, user_id: int) -> None:
         ok = self.repository.delete_user(user_id)
@@ -56,6 +61,7 @@ class UserService:
 
         if not is_admin:
             if not is_self:
+                # Podés traducir estos mensajes si preferís
                 raise DjangoValidationError({"detail": "You are not allowed to change this password."})
             if not old_password:
                 raise DjangoValidationError({"old_password": "This field is required."})

@@ -16,6 +16,7 @@ class PlayerSerializer(serializers.ModelSerializer):
             'nick_name',
             'position',
             'level',
+            'points',
             'is_active',
             'created_at',
             'updated_at',
@@ -42,6 +43,7 @@ class CreatePlayerSerializer(serializers.ModelSerializer):
             'nick_name',
             'position',
             'level',
+            'points',
             'is_active',
             'user_id',
             'category_id'
@@ -84,6 +86,7 @@ class UpdatePlayerSerializer(serializers.ModelSerializer):
             'nick_name',
             'position',
             'level',
+            'points',
             'is_active',
             'user_id',
             'category_id'
@@ -106,6 +109,7 @@ class UpdatePlayerSerializer(serializers.ModelSerializer):
         instance.nick_name = validated_data.get('nick_name', instance.nick_name)
         instance.position = validated_data.get('position', instance.position)
         instance.level = validated_data.get('level', instance.level)
+        instance.points = validated_data.get('points', instance.points)
         instance.is_active = validated_data.get('is_active', instance.is_active)
         instance.save()
         return instance
@@ -115,4 +119,4 @@ class PlayerMiniSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Player
-        fields = ["id", "nick_name", "position", "level", "is_active", "category_id"]
+        fields = ["id", "nick_name", "position", "level", "points", "is_active", "category_id"]

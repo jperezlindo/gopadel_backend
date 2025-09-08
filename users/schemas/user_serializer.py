@@ -17,10 +17,9 @@ class UserSerializer(serializers.ModelSerializer):
     facility_id = serializers.IntegerField(source='facility.id', read_only=True)
     city_id = serializers.IntegerField(source='city.id', read_only=True)
     rol_id = serializers.IntegerField(source='rol.id', read_only=True)
-    player = PlayerMiniSerializer(read_only=True) # Usamos el mini serializer para evitar cargar todo el Player
+    is_staff = serializers.BooleanField(read_only=True)
+    player = PlayerMiniSerializer(read_only=True)  # mini para no cargar todo Player
 
-    # Nota: Al ser FK, DRF representa por defecto como PK (entero),
-    # no hace falta declarar IntegerField; solo los marcamos read_only.
     class Meta:
         model = User
         fields = [
@@ -32,21 +31,23 @@ class UserSerializer(serializers.ModelSerializer):
             "avatar",
             "is_active",
             "is_deleted",
+            "is_staff",
             "created_at",
             "updated_at",
             "facility_id",
             "city_id",
             "rol_id",
-            "player"
+            "player",
         ]
         read_only_fields = [
             "id",
             "created_at",
             "updated_at",
-            "is_deleted",
             "facility_id",
             "city_id",
             "rol_id",
+            "is_deleted",
+            "is_staff",
         ]
 
 
@@ -54,28 +55,33 @@ class UserSerializer(serializers.ModelSerializer):
 class CreateUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
 
-    # Aceptamos IDs y DRF los mapea a las FKs (los nombres ya coinciden con el modelo)
+    # Aceptamos IDs y DRF los mapea a las FKs (nombres *_id en payload)
     facility_id = serializers.PrimaryKeyRelatedField(
         queryset=Facility.objects.all(),
         source="facility",
         required=False,
         allow_null=True,
-        write_only=True
+        write_only=True,
     )
     city_id = serializers.PrimaryKeyRelatedField(
         queryset=City.objects.all(),
         source="city",
         required=False,
         allow_null=True,
-        write_only=True
+        write_only=True,
     )
     rol_id = serializers.PrimaryKeyRelatedField(
         queryset=Rol.objects.all(),
         source="rol",
         required=False,
         allow_null=True,
-        write_only=True
+        write_only=True,
     )
+
+    # Flags permitidos en creación (el front puede enviarlos)
+    is_active = serializers.BooleanField(required=False, default=True)
+    is_deleted = serializers.BooleanField(required=False, default=False)
+    is_staff = serializers.BooleanField(required=False, default=False)
 
     class Meta:
         model = User
@@ -86,6 +92,9 @@ class CreateUserSerializer(serializers.ModelSerializer):
             "password",
             "birth_day",
             "avatar",
+            "is_active",
+            "is_deleted",
+            "is_staff",
             "facility_id",
             "city_id",
             "rol_id",
@@ -94,12 +103,13 @@ class CreateUserSerializer(serializers.ModelSerializer):
     def validate_email(self, value: str) -> str:
         v = (value or "").strip().lower()
         if User.objects.filter(email__iexact=v).exists():
-            raise serializers.ValidationError("This email is already registered.")
+            # Mensaje claro para la UI
+            raise serializers.ValidationError("Este email ya está registrado.")
         return v
 
-    def create(self, validated_data: Dict[str, Any]) -> User: # type: ignore
+    def create(self, validated_data: Dict[str, Any]) -> User:  # type: ignore
         password = validated_data.pop("password")
-        # Usamos el manager para hashear password y setear defaults
+        # create_user hashea password y setea defaults coherentes
         user = User.objects.create_user(password=password, **validated_data)
         return user
 
@@ -107,13 +117,25 @@ class CreateUserSerializer(serializers.ModelSerializer):
 # ---------- Update/Patch Serializer ----------
 class UpdateUserSerializer(serializers.ModelSerializer):
     facility_id = serializers.PrimaryKeyRelatedField(
-        queryset=Facility.objects.all(), required=False, allow_null=True, write_only=True
+        queryset=Facility.objects.all(),
+        source="facility",
+        required=False,
+        allow_null=True,
+        write_only=True,
     )
     city_id = serializers.PrimaryKeyRelatedField(
-        queryset=City.objects.all(), required=False, allow_null=True, write_only=True
+        queryset=City.objects.all(),
+        source="city",
+        required=False,
+        allow_null=True,
+        write_only=True,
     )
     rol_id = serializers.PrimaryKeyRelatedField(
-        queryset=Rol.objects.all(), required=False, allow_null=True, write_only=True
+        queryset=Rol.objects.all(),
+        source="rol",
+        required=False,
+        allow_null=True,
+        write_only=True,
     )
 
     class Meta:
@@ -126,27 +148,27 @@ class UpdateUserSerializer(serializers.ModelSerializer):
             "avatar",
             "is_active",
             "is_deleted",
+            "is_staff",
             "facility_id",
             "city_id",
             "rol_id",
         ]
-        # Todos opcionales para PATCH/PUT (dejamos que el controlador decida partial o no)
+        # Todos opcionales para PATCH/PUT (la vista decide partial)
         extra_kwargs = {f: {"required": False} for f in fields}
 
     def validate_email(self, value: Optional[str]) -> Optional[str]:
         if value is None:
             return value
         v = value.strip().lower()
-        # Evitar colisión con otros usuarios (excluyendo al propio)
         qs = User.objects.filter(email__iexact=v)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError("This email is already registered.")
+            raise serializers.ValidationError("Este email ya está registrado.")
         return v
 
-    def update(self, instance: User, validated_data: Dict[str, Any]) -> User: # type: ignore
-        # No manejamos password acá (endpoint aparte para change_password)
+    def update(self, instance: User, validated_data: Dict[str, Any]) -> User:  # type: ignore
+        # No manejamos password acá (endpoint aparte)
         for field, val in validated_data.items():
             setattr(instance, field, val)
         instance.save()

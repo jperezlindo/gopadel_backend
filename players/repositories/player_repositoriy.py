@@ -16,11 +16,11 @@ class PlayerRepository(PlayerRepositoryInterface):
     - delete_player: soft delete (is_deleted=True) + desactiva (is_active=False) y retorna bool.
     """
     def get_all_players(self):
-        return Player.objects.filter(is_active=True)
+        return Player.objects.filter()
 
     def get_player_by_id(self, player_id: int) -> Optional[Player]:
         try:
-            return Player.objects.get(id=player_id, is_active=True)
+            return Player.objects.get(id=player_id)
         except ObjectDoesNotExist:
             return None
 
