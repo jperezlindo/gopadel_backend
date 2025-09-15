@@ -30,13 +30,17 @@ class Registration(models.Model):
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING
     )
+    
     payment_status = models.CharField(
         max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID
     )
+    
     paid_amount = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)] # type: ignore
     )
+    
     payment_reference = models.CharField(max_length=120, blank=True, null=True)
+    
     comment = models.TextField(blank=True, null=True)
 
     is_active = models.BooleanField(default=True)

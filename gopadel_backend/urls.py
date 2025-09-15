@@ -27,6 +27,9 @@ urlpatterns = [
     # Registrations API
     path("api/v1/registrations/", include("registrations.urls.registration_urls")),
     
+    # Categories API
+    path("api/v1/categories/", include("categories.urls.category_urls")),
+    
     # ⚠️ REMOVIDO: Tournament Categories API (ahora es interno, no público)
     # path('api/v1/tournament-categories/', include('tournament_categories.urls.tournament_categories_urls')),
 ]

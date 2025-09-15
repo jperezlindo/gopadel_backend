@@ -10,7 +10,7 @@ class TournamentRepository(TournamentRepositoryInterface):
         # Solo activos + optimización de consultas relacionadas
         return (
             Tournament.objects
-            .filter(is_active=True)
+            .all()
             .select_related("facility")
             .prefetch_related("tournament_categories", "tournament_categories__category")
         )
