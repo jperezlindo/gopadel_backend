@@ -1,7 +1,6 @@
-from .registration_serializer import (
-    RegistrationSerializer,
-    CreateRegistrationSerializer,
-    UpdateRegistrationSerializer,
+from .registration_serializers import (
+    RegistrationReadSerializer,
+    RegistrationWriteSerializer,
 )
 
-__all__ = ["RegistrationSerializer", "CreateRegistrationSerializer", "UpdateRegistrationSerializer"]
+__all__ = ["RegistrationReadSerializer", "RegistrationWriteSerializer"]

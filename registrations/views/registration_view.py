@@ -1,7 +1,6 @@
-# registrations/views/registration_view.py
 from registrations.controllers.registration_controller import (
-    RegistrationListCreateView,
-    RegistrationDetailView,
+    RegistrationListCreateView as RegistrationListCreateView,
+    RegistrationDetailView as RegistrationDetailView,
 )
 
 __all__ = ["RegistrationListCreateView", "RegistrationDetailView"]

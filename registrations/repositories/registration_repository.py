@@ -1,61 +1,40 @@
-from typing import Any, Optional
-from django.core.exceptions import ObjectDoesNotExist
+# registrations/repositories/registration_repository.py
+from typing import Optional, Any
 from django.db.models import Q
+from django.core.exceptions import ObjectDoesNotExist
 from registrations.models.registration import Registration
-from registrations.interfaces.registration_repository_interface import (
-    RegistrationRepositoryInterface,
-)
+from registrations.interfaces.registration_repository_interface import IRegistrationRepository
 
-
-class RegistrationRepository(RegistrationRepositoryInterface):
-    def list(self, **filters) -> Any:
-        qs = Registration.objects.select_related(
-            "tournament_category",
-            "player",
-            "partner",
-            "tournament_category__tournament",
-        ).all()
-
-        if "tournament_id" in filters and filters["tournament_id"] is not None:
-            qs = qs.filter(tournament_category__tournament_id=filters["tournament_id"])
-
-        if "tournament_category_id" in filters and filters["tournament_category_id"] is not None:
-            qs = qs.filter(tournament_category_id=filters["tournament_category_id"])
-
-        if "player_id" in filters and filters["player_id"] is not None:
-            pid = filters["player_id"]
-            qs = qs.filter(Q(player_id=pid) | Q(partner_id=pid))
-
-        if "status" in filters and filters["status"] is not None:
-            qs = qs.filter(status=filters["status"])
-
-        return qs.order_by("id")
+class RegistrationRepository(IRegistrationRepository):
+    def list(self, tournament_category_id: Optional[int] = None) -> Any:
+        qs = Registration.objects.select_related("tournament_category", "player", "partner").order_by("-id")
+        if tournament_category_id:
+            qs = qs.filter(tournament_category_id=tournament_category_id)
+        return qs
 
     def get_by_id(self, reg_id: int) -> Optional[Registration]:
         try:
-            return Registration.objects.select_related(
-                "tournament_category",
-                "player",
-                "partner",
-                "tournament_category__tournament",
-            ).get(id=reg_id)
+            return Registration.objects.select_related("tournament_category", "player", "partner").get(id=reg_id)
         except ObjectDoesNotExist:
             return None
 
-    def create(self, data: dict) -> Registration:
-        return Registration.objects.create(**data)
+    def exists_player_in_tc(self, tc_id: int, player_id: int) -> bool:
+        return Registration.objects.filter(tournament_category_id=tc_id, player_id=player_id).exists()
 
-    def update(self, instance: Registration, data: dict) -> Registration:
-        for k, v in data.items():
-            setattr(instance, k, v)
-        instance.save()
-        return instance
+    def exists_partner_in_tc(self, tc_id: int, partner_id: int) -> bool:
+        return Registration.objects.filter(tournament_category_id=tc_id, partner_id=partner_id).exists()
+
+    def exists_pair_in_tc(self, tc_id: int, player_id: int, partner_id: int) -> bool:
+        # contempla orden inverso
+        return Registration.objects.filter(
+            tournament_category_id=tc_id
+        ).filter(
+            (Q(player_id=player_id) & Q(partner_id=partner_id)) |
+            (Q(player_id=partner_id) & Q(partner_id=player_id))
+        ).exists()
+
+    def create(self, **data) -> Registration:
+        return Registration.objects.create(**data)
 
     def delete(self, instance: Registration) -> None:
         instance.delete()
-
-    def exists_person_in_tournament(self, person_id: int, tournament_id: int) -> bool:
-        return Registration.objects.filter(
-            Q(player_id=person_id) | Q(partner_id=person_id),
-            tournament_category__tournament_id=tournament_id,
-        ).exists()

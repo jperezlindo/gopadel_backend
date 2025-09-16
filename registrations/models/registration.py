@@ -1,72 +1,90 @@
 # registrations/models/registration.py
 from django.db import models
-from django.utils import timezone
 from django.core.validators import MinValueValidator
-from tournaments.models.tournament import Tournament
-from tournament_categories.models.tournament_category import TournamentCategory
-from players.models.player import Player
+from django.db.models import Q, UniqueConstraint, CheckConstraint, F
+
 
 class Registration(models.Model):
-    class Status(models.TextChoices):
-        PENDING = "pending", "Pending"
-        CONFIRMED = "confirmed", "Confirmed"
-        CANCELLED = "cancelled", "Cancelled"
-
-    class PaymentStatus(models.TextChoices):
-        UNPAID = "unpaid", "Unpaid"
-        PAID = "paid", "Paid"
-        REFUNDED = "refunded", "Refunded"
-
     tournament_category = models.ForeignKey(
-        TournamentCategory, on_delete=models.CASCADE, related_name="registrations"
+        "tournament_categories.TournamentCategory",
+        on_delete=models.CASCADE,
+        related_name="registrations",
     )
     player = models.ForeignKey(
-        Player, on_delete=models.CASCADE, related_name="registrations_as_player"
+        "players.Player",
+        on_delete=models.CASCADE,
+        related_name="registrations_as_player",
     )
     partner = models.ForeignKey(
-        Player, on_delete=models.CASCADE, related_name="registrations_as_partner"
+        "players.Player",
+        on_delete=models.CASCADE,
+        related_name="registrations_as_partner",
     )
 
-    status = models.CharField(
-        max_length=20, choices=Status.choices, default=Status.PENDING
-    )
-    
-    payment_status = models.CharField(
-        max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID
-    )
-    
     paid_amount = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)] # type: ignore
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
     )
-    
-    payment_reference = models.CharField(max_length=120, blank=True, null=True)
-    
-    comment = models.TextField(blank=True, null=True)
+    payment_reference = models.TextField(blank=True, default="")
+    comment = models.CharField(max_length=255, blank=True, default="")
 
     is_active = models.BooleanField(default=True)
+    payment_status = models.CharField(max_length=50, blank=True, default="")  # sin choices para no forzar validación
 
-    created_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "registrations_registration"
-        # Orden canónico de la pareja: player_id < partner_id
+        db_table = "registrations"
+
+        # Legibilidad y convenciones
+        verbose_name = "Registration"
+        verbose_name_plural = "Registrations"
+        default_related_name = "registrations"
+
+        # Orden y "latest"
+        ordering = ["-created_at", "-id"]
+        get_latest_by = "created_at"
+
+        # Reglas a nivel BD
         constraints = [
-            models.CheckConstraint(
-                check=models.Q(player__lt=models.F("partner")),
-                name="registrations_player_lt_partner",
+            # un jugador no puede inscribirse 2 veces en la misma TC
+            UniqueConstraint(
+                fields=["tournament_category", "player"],
+                name="uq_registration_tc_player",
             ),
-            # Unicidad de la pareja (orden canónico) dentro de la misma tournament_category
-            models.UniqueConstraint(
+            # un partner no puede repetirse en la misma TC
+            UniqueConstraint(
+                fields=["tournament_category", "partner"],
+                name="uq_registration_tc_partner",
+            ),
+            # par (player, partner) único por TC (orden inverso se valida en service)
+            UniqueConstraint(
                 fields=["tournament_category", "player", "partner"],
-                name="uq_registration_pair_in_category",
+                name="uq_registration_tc_player_partner",
             ),
-        ]
-        indexes = [
-            models.Index(fields=["tournament_category"]),
-            models.Index(fields=["player"]),
-            models.Index(fields=["partner"]),
+            # player != partner
+            CheckConstraint(
+                check=~Q(player=F("partner")),
+                name="ck_registration_player_ne_partner",
+            ),
+            # paid_amount >= 0 (refuerza el validator a nivel BD)
+            CheckConstraint(
+                check=Q(paid_amount__gte=0),
+                name="ck_registration_paid_amount_gte_0",
+            ),
         ]
 
-    def __str__(self) -> str:
-        return f"Reg #{self.pk} - TC:{self.tournament_category_id} [{self.player_id}+{self.partner_id}]" # type: ignore
+        # Índices para consultas típicas
+        indexes = [
+            models.Index(fields=["tournament_category"], name="reg_idx_tc"),
+            models.Index(fields=["player"], name="reg_idx_player"),
+            models.Index(fields=["partner"], name="reg_idx_partner"),
+            models.Index(fields=["is_active"], name="reg_idx_is_active"),
+            models.Index(fields=["payment_status"], name="reg_idx_payment_status"),
+            models.Index(fields=["-created_at", "-id"], name="reg_idx_created_desc"),
+        ]
+
+    def __str__(self):
+        return f"Reg #{self.pk} - TC:{self.tournament_category_id} P:{self.player_id}/{self.partner_id}"  # type: ignore

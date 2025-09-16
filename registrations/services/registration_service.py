@@ -1,88 +1,63 @@
-from typing import Any, Optional
+# registrations/services/registration_service.py
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from registrations.repositories.registration_repository import RegistrationRepository
 from registrations.models.registration import Registration
-from tournament_categories.models.tournament_category import TournamentCategory
-
 
 class RegistrationService:
-    def __init__(self) -> None:
-        self.repo = RegistrationRepository()
+    def __init__(self, repo: RegistrationRepository | None = None):
+        self.repo = repo or RegistrationRepository()
 
-    def list(self, **filters) -> Any:
-        return self.repo.list(**filters)
+    def list(self, tournament_category_id: int | None = None):
+        return self.repo.list(tournament_category_id)
 
-    def get(self, reg_id: int) -> Optional[Registration]:
-        return self.repo.get_by_id(reg_id)
-
-    def _validate_unique_people_in_tournament(
-        self,
-        tournament_id: int,
-        player_id: int,
-        partner_id: int,
-        exclude_id: Optional[int] = None,
-    ) -> None:
-        """
-        Ni player ni partner pueden estar ya inscriptos en ese torneo (en ninguna categoría).
-        """
-        qs = Registration.objects.filter(
-            Q(player_id=player_id)
-            | Q(partner_id=player_id)
-            | Q(player_id=partner_id)
-            | Q(partner_id=partner_id),
-            tournament_category__tournament_id=tournament_id,
-        )
-        if exclude_id:
-            qs = qs.exclude(id=exclude_id)
-        if qs.exists():
-            raise ValidationError(
-                "Either player or partner is already registered in this tournament."
-            )
-
-    def create(self, data: dict) -> Registration:
-        tc: TournamentCategory = data["tournament_category"]
-        tournament_id = tc.tournament_id # type: ignore
-        player_id = data["player"].id
-        partner_id = data["partner"].id
-
-        if player_id == partner_id:
-            raise ValidationError("Player and partner must be different.")
-
-        # Reglas de negocio: nadie puede duplicarse en el torneo
-        self._validate_unique_people_in_tournament(tournament_id, player_id, partner_id)
-
-        # Validaciones de modelo (incluye check player < partner y unique pair in category)
-        reg = Registration(**data)
-        reg.full_clean()
-        reg.save()
+    def get(self, reg_id: int):
+        reg = self.repo.get_by_id(reg_id)
+        if not reg:
+            raise ValidationError("Registration no encontrada.")
         return reg
 
-    def update(self, reg_id: int, data: dict) -> Registration:
-        instance = self.repo.get_by_id(reg_id)
-        if instance is None:
-            raise ValidationError("Registration not found.")
+    def create(
+        self,
+        *,
+        tournament_category,
+        player,
+        partner,
+        paid_amount,
+        payment_reference: str = "",
+        comment: str = "",
+        is_active: bool | None = None,
+        payment_status: str | None = None,
+    ):
+        tc_id = tournament_category.id if hasattr(tournament_category, "id") else int(tournament_category)
+        player_id = player.id if hasattr(player, "id") else int(player)
+        partner_id = partner.id if hasattr(partner, "id") else int(partner)
 
-        player = data.get("player", instance.player)
-        partner = data.get("partner", instance.partner)
-        if player == partner:
-            raise ValidationError("Player and partner must be different.")
+        # Duplicidades de negocio
+        if self.repo.exists_player_in_tc(tc_id, player_id):
+            raise ValidationError("El jugador ya está inscripto en esta categoría de torneo.")
+        if self.repo.exists_partner_in_tc(tc_id, partner_id):
+            raise ValidationError("El partner ya está inscripto en esta categoría de torneo.")
+        if self.repo.exists_pair_in_tc(tc_id, player_id, partner_id):
+            raise ValidationError("Esta pareja ya está inscripta en esta categoría (o en orden inverso).")
 
-        tournament_id = instance.tournament_category.tournament_id # type: ignore
-        self._validate_unique_people_in_tournament(
-            tournament_id, player.id, partner.id, exclude_id=instance.id # type: ignore
-        )
+        data = {
+            "tournament_category": tournament_category,
+            "player": player,
+            "partner": partner,
+            "paid_amount": paid_amount,
+            "payment_reference": (payment_reference or "").strip(),
+            "comment": (comment or "").strip(),
+            "is_active": True if is_active is None else bool(is_active),
+            "payment_status": (payment_status or ""),
+        }
 
-        for k, v in data.items():
-            setattr(instance, k, v)
+        # Validación de modelo antes de crear
+        tmp = Registration(**data)
+        tmp.full_clean()
 
-        instance.full_clean()
-        instance.save()
-        return instance
+        return self.repo.create(**data)
 
-    def delete(self, reg_id: int) -> bool:
-        instance = self.repo.get_by_id(reg_id)
-        if instance is None:
-            return False
-        self.repo.delete(instance)
+    def delete(self, reg_id: int):
+        reg = self.get(reg_id)
+        self.repo.delete(reg)
         return True

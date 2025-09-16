@@ -1,7 +1,8 @@
-# player/views/player_view.py
-from players.controllers import (
+# players/views/player_view.py
+from players.controllers.player_controller import (
     PlayerListCreateView,
-    PlayerDetailView
+    PlayerDetailView,
+    PlayerSearchView,
 )
 
-__all__ = ["PlayerListCreateView", "PlayerDetailView"]
+__all__ = ["PlayerListCreateView", "PlayerDetailView", "PlayerSearchView"]

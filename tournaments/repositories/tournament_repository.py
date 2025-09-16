@@ -1,3 +1,4 @@
+# tournaments/repositories/tournament_repository.py
 from typing import Any, Optional
 from django.core.exceptions import ObjectDoesNotExist
 from tournaments.models import Tournament
@@ -5,14 +6,20 @@ from tournaments.interfaces.tournament_repository_interface import TournamentRep
 
 
 class TournamentRepository(TournamentRepositoryInterface):
+    """
+    Repository: acceso optimizado a torneos.
+    - Lista: solo activos, ordenados desc, con facility (select_related)
+      y categorías + category (prefetch_related).
+    - Get by id: mismo esquema de optimización.
+    """
 
     def get_all_tournaments(self) -> Any:
-        # Solo activos + optimización de consultas relacionadas
         return (
             Tournament.objects
-            .all()
+            .filter(is_active=True)  # Solo activos
             .select_related("facility")
             .prefetch_related("tournament_categories", "tournament_categories__category")
+            .order_by("-id")
         )
 
     def get_tournament_by_id(self, tournament_id: int) -> Optional[Tournament]:

@@ -1,3 +1,3 @@
-from .player_repositoriy import PlayerRepository
+from .player_repository import PlayerRepository
 
 __all__ = ["PlayerRepository"]

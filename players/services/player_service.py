@@ -1,9 +1,11 @@
 # players/services/player_service.py
 from typing import Any, Optional, Dict
-from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.core.exceptions import ValidationError
+from django.db.models import QuerySet
 
 from players.models.player import Player
-from players.repositories.player_repositoriy import PlayerRepository
+from players.repositories.player_repository import PlayerRepository  # fix del import
+
 
 class PlayerService:
     def __init__(self, repository: Optional[PlayerRepository] = None):
@@ -34,3 +36,23 @@ class PlayerService:
 
     def delete(self, player_id: int) -> bool:
         return self.repository.delete_player(player_id)
+
+    # === Nuevo: búsqueda por nick_name (Player) o name/last_name/email (CustomUser) ===
+    def search(self, term: str, limit: Optional[int] = 50) -> QuerySet[Player]:
+        q = (term or "").strip()
+        if len(q) < 2:
+            raise ValidationError("Search term must have at least 2 characters.", code="invalid")
+
+        # Normalizamos y acotamos el límite
+        if limit is not None:
+            try:
+                limit = int(limit)
+            except (TypeError, ValueError):
+                limit = 50
+            # Evitamos valores extremos
+            if limit <= 0:
+                limit = 50
+            if limit > 200:
+                limit = 200
+
+        return self.repository.search_players(q, limit=limit)

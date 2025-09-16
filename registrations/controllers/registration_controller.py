@@ -1,86 +1,60 @@
-from typing import Any
-from django.core.exceptions import ValidationError
+# registrations/controllers/registration_controller.py
 from rest_framework.views import APIView
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
+from django.core.exceptions import ValidationError
 
 from registrations.services.registration_service import RegistrationService
-from registrations.schemas.registration_serializer import (
-    RegistrationSerializer,
-    CreateRegistrationSerializer,
-    UpdateRegistrationSerializer,
+from registrations.schemas.registration_serializers import (
+    RegistrationReadSerializer,
+    RegistrationWriteSerializer,
 )
 from utils.response_handler import success_response, error_response
 
 
 class RegistrationListCreateView(APIView):
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
-        self.service = RegistrationService()
+    service = RegistrationService()
 
-    def get(self, request) -> Response:
-        try:
-            filters = {
-                k: v
-                for k, v in {
-                    "tournament_id": request.query_params.get("tournament_id"),
-                    "tournament_category_id": request.query_params.get("tournament_category_id"),
-                    "player_id": request.query_params.get("player_id"),
-                    "status": request.query_params.get("status"),
-                }.items()
-                if v is not None
-            }
-            items = self.service.list(**filters)
-            data = RegistrationSerializer(items, many=True).data
-            return success_response(data, status.HTTP_200_OK)
-        except Exception as e:
-            return error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    def get(self, request: Request) -> Response:
+        tc_id = request.query_params.get("tournament_category_id")
+        items = (
+            self.service.list(int(tc_id)) if (tc_id and str(tc_id).isdigit()) else self.service.list()
+        )
+        data = RegistrationReadSerializer(items, many=True).data
+        return success_response(data=data)
 
-    def post(self, request) -> Response:
+    def post(self, request: Request) -> Response:
+        serializer = RegistrationWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            # error_response acepta dict/list/str y normaliza; pasamos el dict de errors
+            return error_response(message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
         try:
-            serializer = CreateRegistrationSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            instance = self.service.create(serializer.validated_data)  # type: ignore
-            data = RegistrationSerializer(instance).data
-            return success_response(data, status.HTTP_201_CREATED)
-        except ValidationError as ve:
-            return error_response(str(ve), status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+            reg = self.service.create(**serializer.validated_data)  # type: ignore[arg-type]
+            data = RegistrationReadSerializer(reg).data
+            return success_response(data=data, status_code=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            # e puede traer message_dict o string; nuestro helper lo normaliza
+            payload = getattr(e, "message_dict", str(e))
+            return error_response(message=payload, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 class RegistrationDetailView(APIView):
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
-        self.service = RegistrationService()
+    service = RegistrationService()
 
-    def get(self, request, pk: int) -> Response:
+    def get(self, request: Request, pk: int) -> Response:
         try:
-            instance = self.service.get(pk)
-            if instance is None:
-                return error_response("Registration not found.", status.HTTP_404_NOT_FOUND)
-            data = RegistrationSerializer(instance).data
-            return success_response(data, status.HTTP_200_OK)
-        except Exception as e:
-            return error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+            reg = self.service.get(pk)
+            data = RegistrationReadSerializer(reg).data
+            return success_response(data=data)
+        except ValidationError as e:
+            payload = getattr(e, "message_dict", str(e))
+            return error_response(message=payload, status_code=status.HTTP_404_NOT_FOUND)
 
-    def patch(self, request, pk: int) -> Response:
+    def delete(self, request: Request, pk: int) -> Response:
         try:
-            serializer = UpdateRegistrationSerializer(data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            instance = self.service.update(pk, serializer.validated_data)  # type: ignore
-            data = RegistrationSerializer(instance).data
-            return success_response(data, status.HTTP_200_OK)
-        except ValidationError as ve:
-            return error_response(str(ve), status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def delete(self, request, pk: int) -> Response:
-        try:
-            ok = self.service.delete(pk)
-            if not ok:
-                return error_response("Registration not found.", status.HTTP_404_NOT_FOUND)
-            return success_response({"deleted": True}, status.HTTP_200_OK)
-        except Exception as e:
-            return error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.service.delete(pk)
+            return success_response(data={"message": "Registro eliminado."})
+        except ValidationError as e:
+            payload = getattr(e, "message_dict", str(e))
+            return error_response(message=payload, status_code=status.HTTP_404_NOT_FOUND)
