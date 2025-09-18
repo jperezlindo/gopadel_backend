@@ -9,20 +9,48 @@ from tournament_categories.models.tournament_category import TournamentCategory
 
 
 class TournamentService:
+    """
+    Orquesto reglas de negocio de Tournaments.
+    Decisiones:
+    - Cuando el recurso no existe, levanto DjangoValidationError con code="not_found"
+      y payload consistente (listas) para que el handler lo mapee a HTTP 404.
+    - Uso transacciones en create/update para mantener consistencia al editar categorías inline.
+    - Las validaciones de dominio se refuerzan con full_clean() previo a persistir.
+    """
+
     def __init__(self, repository: Optional[TournamentRepository] = None):
         self.repository = repository or TournamentRepository()
 
+    # =========================
+    # Lectura
+    # =========================
     def list(self) -> Any:
+        """
+        Listado base. El repo ya hace select_related/prefetch para evitar N+1.
+        (Si necesitás filtros más adelante: search/is_active/facility_id, se pasan al repo.)
+        """
         return self.repository.get_all_tournaments()
 
     def get(self, tournament_id: int) -> Tournament:
+        """
+        Obtengo un torneo por PK con relaciones precargadas.
+        """
         instance = self.repository.get_tournament_by_id(tournament_id)
         if not instance:
-            raise DjangoValidationError({"detail": "Tournament not found."})
+            raise DjangoValidationError({"detail": ["Tournament not found."]}, code="not_found")
         return instance
 
+    # =========================
+    # Escritura
+    # =========================
     @transaction.atomic
     def create(self, data: Dict) -> Tournament:
+        """
+        Creo torneo y, si viene `categories`, realizo creación inline.
+        Reglas:
+        - Valido duplicados por nombre dentro del payload (case-insensitive).
+        - Valido el torneo con full_clean() antes de persistir para evitar doble save.
+        """
         categories_payload: List[Dict] = data.pop("categories", []) or []
 
         # Validar duplicados por nombre en payload (case-insensitive)
@@ -62,6 +90,7 @@ class TournamentService:
             try:
                 TournamentCategory.objects.bulk_create(instances, ignore_conflicts=False)
             except IntegrityError as e:
+                # Unicidad (tournament + name), ajustá el mensaje si tu constraint usa otro nombre
                 raise DjangoValidationError({"categories": ["Tournament + name must be unique."]}) from e
 
         # Devolver con facility y categorías prefetch (usa repo)
@@ -81,21 +110,18 @@ class TournamentService:
         # 1) Actualizar campos del torneo
         instance = self.repository.update_tournament(tournament_id, data)
         if not instance:
-            raise DjangoValidationError({"detail": "Tournament not found."})
+            raise DjangoValidationError({"detail": ["Tournament not found."]}, code="not_found")
         instance.full_clean()
         instance.save()
 
         # 2) Si no enviaron 'categories', no tocamos categorías
         if categories_payload is None:
-            return self.get(instance.id)
+            return self.get(instance.id) # type: ignore
 
         # 3) Validar duplicados por nombre dentro del payload (case-insensitive)
         names_seen = set()
         for c in categories_payload:
-            if "name" in c and c["name"] is not None:
-                n = (c.get("name") or "").strip().lower()
-            else:
-                n = None
+            n = (c.get("name") or "").strip().lower() if c.get("name") is not None else None
             if n:
                 if n in names_seen:
                     raise DjangoValidationError({"categories": [f"Duplicated names in payload: {n}"]})
@@ -169,6 +195,9 @@ class TournamentService:
         return self.get(instance.id)  # type: ignore
 
     def delete(self, tournament_id: int) -> None:
+        """
+        Borrado físico del torneo. Si no existe, not_found.
+        """
         ok = self.repository.delete_tournament(tournament_id)
         if not ok:
-            raise DjangoValidationError({"detail": "Tournament not found."})
+            raise DjangoValidationError({"detail": ["Tournament not found."]}, code="not_found")

@@ -1,0 +1,12 @@
+# requirements-dev.txt
+# Incluyo los paquetes base del proyecto:
+-r requirements.txt
+
+# --- Testing stack ---
+pytest~=8.3
+pytest-django~=4.9
+
+# Útiles para pruebas (recomendados)
+factory_boy~=3.3
+Faker~=28.0
+coverage~=7.6

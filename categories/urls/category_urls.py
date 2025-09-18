@@ -1,8 +1,7 @@
-# categories/urls/category_urls.py
-from django.urls import path
-from categories.views.category_view import CategoryListView, CategoryDetailView
+# gopadel_backend/urls.py (referencia, no lo toco ahora)
+from django.urls import path, include
 
 urlpatterns = [
-    path("", CategoryListView.as_view(), name="category_list"),
-    path("<int:pk>/", CategoryDetailView.as_view(), name="category_detail"),
+    # ...
+    path("api/v1/categories/", include("categories.urls.category_urls")),
 ]

@@ -5,17 +5,21 @@ from django.db import IntegrityError
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework import status
 
+# En este módulo centralizo la normalización de payloads de error y el mapeo a HTTP status.
+# Objetivo: que el front reciba siempre un formato estable sin importar la fuente del error.
+
 Payload = Union[Dict[str, Any], List[Any], Tuple[Any, ...], str, None]
 
 
 # ---------------- Normalización de payloads ----------------
-
 def _as_list(val: Any) -> List[str]:
+    # Aseguro que cualquier valor se convierta en lista de strings para mantener consistencia.
     if val is None:
         return []
     if isinstance(val, (list, tuple)):
         return [str(v) for v in val]
     return [str(val)]
+
 
 def normalize_errors(err: Payload) -> Dict[str, List[str]]:
     """
@@ -37,9 +41,10 @@ def normalize_errors(err: Payload) -> Dict[str, List[str]]:
 
 
 # ---------------- Mapeo de códigos a HTTP status (Django ValidationError) ----------------
-# Conservamos tu lógica original y la hacemos privada para usarla como building block.
+# Acá detecto códigos de error para traducirlos a un status HTTP coherente para el cliente.
 
 def _collect_codes(exc: DjangoValidationError) -> Set[str]:
+    # Extraigo códigos de error desde las estructuras posibles de DjangoValidationError.
     codes: Set[str] = set()
 
     # Estructura tipo dict: {'field': [ErrorList], ...}
@@ -66,6 +71,7 @@ def _collect_codes(exc: DjangoValidationError) -> Set[str]:
 
     return codes
 
+
 def map_validation_error_status(exc: DjangoValidationError) -> int:
     """
     Convierte códigos de ValidationError (Django) a HTTP status.
@@ -85,7 +91,6 @@ def map_validation_error_status(exc: DjangoValidationError) -> int:
 
 
 # ---------------- Mapeo general de Exception -> HTTP status ----------------
-
 def map_exception_status(exc: Exception) -> int:
     """
     Determina un HTTP status sensato según el tipo de excepción.
@@ -110,7 +115,6 @@ def map_exception_status(exc: Exception) -> int:
 
 
 # ---------------- Helpers de normalización específicos (opcionales) ----------------
-
 def normalize_exception_payload(exc: Exception) -> Dict[str, List[str]]:
     """
     Intenta extraer un payload por-campo cuando es posible.
@@ -128,9 +132,7 @@ def normalize_exception_payload(exc: Exception) -> Dict[str, List[str]]:
         return normalize_errors(raw)
 
     if isinstance(exc, IntegrityError):
-        msg = str(exc)
-        # Si querés, acá podés detectar campos específicos (p.ej. email) según tu DB backend.
-        # Por defecto lo tratamos como conflicto genérico:
+        # Si se necesitara, acá se podría mapear un campo específico según el backend.
         return {"non_field_errors": ["Violación de integridad de datos."]}
 
     return {"detail": [str(exc) or "Unknown error"]}

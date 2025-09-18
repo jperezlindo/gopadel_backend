@@ -16,23 +16,25 @@ from users.schemas.user_serializer import (
 )
 from users.schemas.change_password_serializer import ChangePasswordSerializer
 from utils.response_handler import success_response, error_response
+from utils.pagination import DefaultPagination  # <-- uso el paginador unificado
 
 
 # ---------------- Helpers de normalización ----------------
-
 def _as_list(val):
+    # Normalizo cualquier cosa a lista de strings para mantener consistencia.
     if val is None:
         return []
     if isinstance(val, (list, tuple)):
         return [str(v) for v in val]
     return [str(val)]
 
+
 def normalize_errors(err):
     """
-    Devuelve dict[str, list[str]] estable para la UI.
+    Devuelvo dict[str, list[str]] estable para la UI.
     - dict -> {campo: [msgs]}
     - list/tuple -> {"non_field_errors": [...]}
-    - str -> {"detail": "..."}
+    - str  -> {"detail": ["..."]}
     """
     if isinstance(err, dict):
         out = {}
@@ -41,28 +43,57 @@ def normalize_errors(err):
         return out
     if isinstance(err, (list, tuple)):
         return {"non_field_errors": _as_list(err)}
-    return {"detail": str(err)}
+    return {"detail": [str(err)]}
 
 
 class UserListCreateView(APIView):
+    """
+    Expongo listado y creación de usuarios.
+
+    Decisiones:
+    - En GET pagino usando DefaultPagination para devolver metadatos
+      esperados por el front (count, page, page_size, total_pages, results).
+    - En POST valido con CreateUserSerializer y delego la creación al service.
+    """
+
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = UserService()
+        # Instancio el paginador para este controller
+        self.paginator = DefaultPagination()
 
     def get(self, request) -> Response:
+        """
+        Listado paginado de usuarios.
+        Nota: por ahora no aplico filtros por query params; si hace falta más adelante,
+        se pasa el filtrado al service/repository y acá solo se recogen los params.
+        """
         try:
-            items = self.service.list()
-            data = UserSerializer(items, many=True).data
-            return success_response(data, status.HTTP_200_OK)
-        except Exception as e:
+            queryset = self.service.list()
+            page = self.paginator.paginate_queryset(queryset, request, view=self)
+
+            # Serializo solo la página actual
+            serialized = UserSerializer(page, many=True).data
+
+            # Armo la respuesta paginada con el contrato del paginador unificado
+            paginated = self.paginator.get_paginated_response(serialized)
+            # Devuelvo el payload paginado tal cual (success_response no re-envuelve)
+            return success_response(paginated.data, status.HTTP_200_OK)
+
+        except Exception:
             # logger.exception("Error listing users")
-            return error_response({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request) -> Response:
+        """
+        Creación de usuario.
+        - Valido payload con CreateUserSerializer.
+        - Si hay errores de validación, normalizo para la UI.
+        - Si todo está OK, creo el usuario vía service y devuelvo 201.
+        """
         try:
             serializer = CreateUserSerializer(data=request.data)
 
-            # No levantamos excepción automática: devolvemos errores normalizados
             if not serializer.is_valid():
                 return error_response(normalize_errors(serializer.errors), status.HTTP_400_BAD_REQUEST)
 
@@ -79,7 +110,7 @@ class UserListCreateView(APIView):
             return error_response(normalize_errors(payload), status.HTTP_400_BAD_REQUEST)
 
         except IntegrityError as e:
-            # Por si la unicidad de email se valida a nivel DB
+            # Manejo unicidad de email a nivel DB por si se escapa del serializer.
             msg = str(e).lower()
             if "email" in msg and "unique" in msg:
                 return error_response({"email": ["Este email ya está registrado."]}, status.HTTP_400_BAD_REQUEST)
@@ -87,10 +118,19 @@ class UserListCreateView(APIView):
 
         except Exception:
             # logger.exception("Error creating user")
-            return error_response({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserDetailView(APIView):
+    """
+    Expongo detalle, actualización y borrado lógico (soft-delete) de usuarios.
+
+    Decisiones:
+    - get(): 404 si no existe (service levanta not_found y el handler lo mapea).
+    - put/patch(): actualizo con UpdateUserSerializer (no toco password acá).
+    - delete(): soft-delete (is_deleted=True, is_active=False) vía service.
+    """
+
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = UserService()
@@ -101,14 +141,16 @@ class UserDetailView(APIView):
             data = UserSerializer(instance).data
             return success_response(data, status.HTTP_200_OK)
         except DjangoValidationError:
-            return error_response({"detail": "User not found."}, status.HTTP_404_NOT_FOUND)
+            return error_response({"detail": ["User not found."]}, status.HTTP_404_NOT_FOUND)
         except Exception:
-            return error_response({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def put(self, request, pk: int) -> Response:
+        # PUT total: partial=False
         return self._update(request, pk, partial=False)
 
     def patch(self, request, pk: int) -> Response:
+        # PATCH parcial: partial=True
         return self._update(request, pk, partial=True)
 
     def delete(self, request, pk: int) -> Response:
@@ -116,15 +158,21 @@ class UserDetailView(APIView):
             self.service.delete(pk)
             return success_response({"message": "Deleted successfully"}, status.HTTP_200_OK)
         except DjangoValidationError:
-            return error_response({"detail": "User not found."}, status.HTTP_404_NOT_FOUND)
+            return error_response({"detail": ["User not found."]}, status.HTTP_404_NOT_FOUND)
         except Exception:
-            return error_response({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _update(self, request, pk: int, partial: bool) -> Response:
+        """
+        Flujo común para PUT/PATCH:
+        - Valido payload con UpdateUserSerializer.
+        - Delego actualización al service.
+        - Normalizo errores en caso de validación o integridad.
+        """
         try:
             instance = self.service.get(pk)
         except DjangoValidationError:
-            return error_response({"detail": "User not found."}, status.HTTP_404_NOT_FOUND)
+            return error_response({"detail": ["User not found."]}, status.HTTP_404_NOT_FOUND)
 
         serializer = UpdateUserSerializer(instance, data=request.data, partial=partial)
         try:
@@ -150,22 +198,28 @@ class UserDetailView(APIView):
             return error_response({"non_field_errors": ["Violación de integridad de datos."]}, status.HTTP_400_BAD_REQUEST)
 
         except Exception:
-            return error_response({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserChangePasswordView(APIView):
+    """
+    Expongo cambio de password:
+    - Admins pueden cambiar la contraseña de cualquiera sin old_password.
+    - Usuarios finales solo pueden cambiar su propia contraseña y deben enviar old_password.
+    """
+
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = UserService()
 
     def post(self, request, pk: int) -> Response:
-        # 1) Cargar target user (404 si no existe)
+        # 1) Cargo target user (404 si no existe)
         try:
             target_user = self.service.get(pk)
         except DjangoValidationError:
-            return error_response({"detail": "User not found."}, status.HTTP_404_NOT_FOUND)
+            return error_response({"detail": ["User not found."]}, status.HTTP_404_NOT_FOUND)
 
-        # 2) Validar payload con contexto (actor y target)
+        # 2) Valido payload con contexto (actor y target)
         serializer = ChangePasswordSerializer(
             data=request.data,
             context={"actor": request.user, "target_user": target_user}
@@ -176,7 +230,7 @@ class UserChangePasswordView(APIView):
                 return error_response(normalize_errors(serializer.errors), status.HTTP_400_BAD_REQUEST)
 
             old_password = serializer.validated_data.get("old_password")  # type: ignore
-            new_password = serializer.validated_data["new_password"]  # type: ignore
+            new_password = serializer.validated_data["new_password"]       # type: ignore
 
             # 3) Cambiar password vía service
             updated = self.service.change_password(
@@ -192,7 +246,7 @@ class UserChangePasswordView(APIView):
 
         except DRFValidationError as e:
             payload = normalize_errors(getattr(e, "detail", str(e)))
-            # si vino "User not found." lo convertimos en 404
+            # Si vino "User not found." lo convierto en 404
             code = status.HTTP_404_NOT_FOUND if payload.get("detail") == ["User not found."] else status.HTTP_400_BAD_REQUEST
             return error_response(payload, code)
 
@@ -201,4 +255,4 @@ class UserChangePasswordView(APIView):
             return error_response(normalize_errors(payload), status.HTTP_400_BAD_REQUEST)
 
         except Exception:
-            return error_response({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)

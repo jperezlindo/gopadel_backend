@@ -5,6 +5,13 @@ from django.db.models import Q, UniqueConstraint, CheckConstraint, F
 
 
 class Registration(models.Model):
+    """
+    Como responsable del dominio, defino el registro de una pareja (player + partner)
+    en una TournamentCategory. Mantengo este modelo enfocado en datos de negocio
+    directos (pago, estado, etc.) y delego la gestión de indisponibilidades horarias
+    a un modelo hijo (RegistrationUnavailability) para permitir múltiples franjas.
+    """
+
     tournament_category = models.ForeignKey(
         "tournament_categories.TournamentCategory",
         on_delete=models.CASCADE,
@@ -87,4 +94,14 @@ class Registration(models.Model):
         ]
 
     def __str__(self):
+        # Mantengo una representación concisa y útil para logs/admin
         return f"Reg #{self.pk} - TC:{self.tournament_category_id} P:{self.player_id}/{self.partner_id}"  # type: ignore
+
+    # --- Helpers de dominio (no obligatorios, pero útiles) ---
+    @property
+    def weekday_unavailability(self):
+        """
+        Expongo un acceso rápido a las indisponibilidades (solo días de semana).
+        Esto me sirve para componer lógica en servicios/serializers sin duplicar queries.
+        """
+        return self.unavailability.filter(day_of_week__in=[0, 1, 2, 3, 4]).order_by("day_of_week", "start_time") # type: ignore

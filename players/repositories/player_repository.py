@@ -1,65 +1,84 @@
 # players/repositories/player_repository.py
 from typing import Optional
 from django.db.models import Q, QuerySet
-from django.core.exceptions import ObjectDoesNotExist
 from players.models.player import Player
 from players.interfaces.player_repository_interface import PlayerRepositoryInterface
+
 
 class PlayerRepository(PlayerRepositoryInterface):
     """
     Acceso a datos para Player.
 
-    Convenciones:
-    - get_all_players: lista jugadores activos y no eliminados.
-    - get_player_by_id: trae incluso inactivos (solo excluye eliminados) para poder reactivarlos.
-    - create_player: usa el manager para crear el jugador.
-    - update_player: no modifica campos sensibles.
-    - delete_player: soft delete (is_deleted=True) + desactiva (is_active=False) y retorna bool.
+    Decisiones:
+    - NO se usa soft delete (el modelo no tiene is_deleted): el borrado es FÍSICO.
+    - get_all_players: por defecto devuelvo jugadores activos (is_active=True).
+    - get_player_by_id: trae cualquier jugador (activo o inactivo).
+    - create_player/update_player: delego validaciones de modelo al save().
     """
-    def get_all_players(self):
-        return Player.objects.filter()
 
+    # -------- Listado --------
+    def get_all_players(self) -> QuerySet[Player]:
+        """
+        Devuelvo jugadores activos. Si más adelante necesitás incluir inactivos,
+        agregamos otro método o un flag opcional.
+        """
+        return Player.objects.filter(is_active=True)
+
+    # -------- Obtención puntual --------
     def get_player_by_id(self, player_id: int) -> Optional[Player]:
-        try:
-            return Player.objects.get(id=player_id)
-        except ObjectDoesNotExist:
-            return None
+        """
+        Busco por PK sin filtrar por is_active (permite reactivar luego si hace falta).
+        """
+        return Player.objects.filter(id=player_id).first()
 
+    # -------- Escritura --------
     def create_player(self, data: dict) -> Player:
+        """
+        Creo un jugador. El modelo valida en clean() y save() (full_clean()).
+        """
         return Player.objects.create(**data)
 
     def update_player(self, player_id: int, data: dict) -> Optional[Player]:
+        """
+        Actualizo campos simples. No toco campos no presentes en data.
+        """
         player = self.get_player_by_id(player_id)
         if player is None:
             return None
+
         for key, value in data.items():
             setattr(player, key, value)
+
         player.save()
         return player
 
+    # -------- Borrado (FÍSICO) --------
     def delete_player(self, player_id: int) -> bool:
+        """
+        Borrado físico (no hay soft delete en Player).
+        Retorna False si el jugador no existe.
+        """
         player = self.get_player_by_id(player_id)
         if player is None:
             return False
         player.delete()
-        player.save()
         return True
 
+    # -------- Búsqueda --------
     def search_players(self, term: str, limit: Optional[int] = 50) -> QuerySet[Player]:
         """
         Busca jugadores por:
-        - Player.nick_name (icontains)
-        - users.CustomUser.name / last_name / email (icontains) a través de la relación Player.user
-        Devuelve un QuerySet (puede recortarse por 'limit').
+        - nick_name (icontains)
+        - name / last_name / email del User relacionado
+        Retorna un queryset limitado por defecto a 50 resultados.
         """
         term = (term or "").strip()
         if not term:
-            # si no hay término, devolvemos queryset vacío (decisión de repo; el service puede validar)
             return Player.objects.none()
 
         qs = (
             Player.objects
-            .select_related("user")  # asumiendo FK: Player.user -> users.CustomUser
+            .select_related("user")
             .filter(
                 Q(nick_name__icontains=term)
                 | Q(user__name__icontains=term)
@@ -68,5 +87,4 @@ class PlayerRepository(PlayerRepositoryInterface):
             )
             .order_by("user__name", "nick_name", "id")
         )
-
         return qs[:limit] if isinstance(limit, int) and limit > 0 else qs

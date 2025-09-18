@@ -1,59 +1,103 @@
 # tournaments/controllers/tournament_controller.py
-from typing import Any
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from typing import Any, Dict, Optional, cast
+
+from django.core.exceptions import ValidationError as DjangoVE
 from rest_framework import status
-from django.core.exceptions import ValidationError
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from tournaments.services.tournament_service import TournamentService
 from tournaments.schemas.tournament_serializers import (
-    TournamentSerializer,
     CreateTournamentSerializer,
+    TournamentSerializer,
     UpdateTournamentSerializer,
 )
-from utils.response_handler import success_response, error_response
+from utils.pagination import DefaultPagination
+from utils.response_handler import error_response, success_response
+from utils.error_mapper import map_validation_error_status
+
+
+# ---------------- Helpers de normalización (contrato estable para UI) ----------------
+def _as_list(val):
+    if val is None:
+        return []
+    if isinstance(val, (list, tuple)):
+        return [str(v) for v in val]
+    return [str(val)]
+
+
+def normalize_errors(err):
+    """
+    dict -> {campo: [msgs]}
+    list/tuple -> {"non_field_errors": [...]}
+    str -> {"detail": ["..."]}
+    """
+    if isinstance(err, dict):
+        out = {}
+        for k, v in err.items():
+            out[str(k)] = _as_list(v)
+        return out
+    if isinstance(err, (list, tuple)):
+        return {"non_field_errors": _as_list(err)}
+    return {"detail": [str(err)]}
 
 
 class TournamentListCreateView(APIView):
     """
-    GET  /api/v1/tournaments/     -> Lista torneos (incluye categories via prefetch)
-    POST /api/v1/tournaments/     -> Crea torneo + categories inline (service.create)
+    Listado paginado y creación de torneos.
+
+    GET  /api/v1/tournaments/
+      - Devuelve payload paginado (count, page, page_size, total_pages, results)
+      - Incluye facility embebido y categorías vía prefetch (repo)
+
+    POST /api/v1/tournaments/
+      - Crea torneo y (opcional) categorías inline
     """
+
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = TournamentService()
+        self.paginator = DefaultPagination()
 
     def get(self, request) -> Response:
         try:
-            items = self.service.list()
-            data = TournamentSerializer(items, many=True).data
-            return success_response(data, status.HTTP_200_OK)
+            qs = self.service.list()
+            page = self.paginator.paginate_queryset(qs, request, view=self)
+            data = TournamentSerializer(page, many=True).data
+            paginated = self.paginator.get_paginated_response(data)
+            return success_response(paginated.data, status.HTTP_200_OK)
         except Exception:
-            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request) -> Response:
         try:
             serializer = CreateTournamentSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            instance = self.service.create(serializer.validated_data)  # type: ignore
-            data = TournamentSerializer(instance).data
-            return success_response(data, status.HTTP_201_CREATED)
-        except ValidationError as e:
-            payload = getattr(e, "message_dict", {"detail": str(e)})
-            return error_response(payload, status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            print("Error en TournamentListCreateView.post:", e)
-            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            instance = self.service.create(cast(Dict[str, Any], serializer.validated_data))
+            return success_response(TournamentSerializer(instance).data, status.HTTP_201_CREATED)
+
+        except DjangoVE as exc:
+            http_status = map_validation_error_status(exc)
+            payload = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return error_response(normalize_errors(payload), http_status)
+        except Exception:
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class TournamentDetailView(APIView):
     """
+    Detalle, actualización y borrado de un torneo.
+
     GET    /api/v1/tournaments/<pk>/
     PUT    /api/v1/tournaments/<pk>/
     PATCH  /api/v1/tournaments/<pk>/
     DELETE /api/v1/tournaments/<pk>/
-    * Update NO toca categories por ahora (solo campos del torneo).
+
+    Nota:
+    - Update soporta edición de categorías inline (service.update).
+    - Borrado es FÍSICO y por cascada elimina sus categorías.
     """
+
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.service = TournamentService()
@@ -61,12 +105,14 @@ class TournamentDetailView(APIView):
     def get(self, request, pk: int) -> Response:
         try:
             instance = self.service.get(pk)
-            data = TournamentSerializer(instance).data
-            return success_response(data, status.HTTP_200_OK)
-        except ValidationError:
-            return error_response({"detail": "Tournament not found."}, status.HTTP_404_NOT_FOUND)
+            return success_response(TournamentSerializer(instance).data, status.HTTP_200_OK)
+
+        except DjangoVE as exc:
+            http_status = map_validation_error_status(exc)
+            payload = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return error_response(normalize_errors(payload), http_status)
         except Exception:
-            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def put(self, request, pk: int) -> Response:
         return self._update(request, pk, partial=False)
@@ -75,29 +121,35 @@ class TournamentDetailView(APIView):
         return self._update(request, pk, partial=True)
 
     def _update(self, request, pk: int, partial: bool) -> Response:
-        print("TournamentDetailView._update called with:", pk, request.data, "partial =", partial)
+        # Paso la instancia al serializer para validaciones coherentes (especialmente fechas en PATCH)
         try:
-            instance = self.service.get(pk)
-        except ValidationError:
-            return error_response({"detail": "Tournament not found."}, status.HTTP_404_NOT_FOUND)
+            current = self.service.get(pk)
+        except DjangoVE as exc:
+            http_status = map_validation_error_status(exc)
+            payload = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return error_response(normalize_errors(payload), http_status)
 
-        serializer = UpdateTournamentSerializer(instance, data=request.data, partial=partial)
+        serializer = UpdateTournamentSerializer(current, data=request.data, partial=partial)
         try:
             serializer.is_valid(raise_exception=True)
-            updated = self.service.update(pk, serializer.validated_data)  # type: ignore
-            data = TournamentSerializer(updated).data
-            return success_response(data, status.HTTP_200_OK)
-        except ValidationError as e:
-            payload = getattr(e, "message_dict", {"detail": str(e)})
-            return error_response(payload, status.HTTP_400_BAD_REQUEST)
+            updated = self.service.update(pk, cast(Dict[str, Any], serializer.validated_data))
+            return success_response(TournamentSerializer(updated).data, status.HTTP_200_OK)
+
+        except DjangoVE as exc:
+            http_status = map_validation_error_status(exc)
+            payload = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return error_response(normalize_errors(payload), http_status)
         except Exception:
-            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def delete(self, request, pk: int) -> Response:
         try:
             self.service.delete(pk)
-            return success_response({"message": "Deleted successfully"}, status.HTTP_200_OK)
-        except ValidationError:
-            return error_response({"detail": "Tournament not found."}, status.HTTP_404_NOT_FOUND)
+            # 204 No Content (más estándar para deletes)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except DjangoVE as exc:
+            http_status = map_validation_error_status(exc)
+            payload = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return error_response(normalize_errors(payload), http_status)
         except Exception:
-            return error_response("Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response({"detail": ["Internal server error"]}, status.HTTP_500_INTERNAL_SERVER_ERROR)
