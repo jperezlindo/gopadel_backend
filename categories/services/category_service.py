@@ -1,7 +1,9 @@
 # categories/services/category_service.py
-from typing import Optional
+from typing import Optional, Dict, Any
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import QuerySet
+
 from categories.models.category import Category
 from categories.repositories.category_repository import CategoryRepository
 
@@ -10,18 +12,20 @@ class CategoryService:
     """
     Servicio de dominio para Categories.
 
-    Objetivo del service:
-    - Centralizar reglas de negocio y validaciones previas a tocar la base de datos.
-    - Proveer una API estable a los controllers para que no dependan del ORM.
-    - Dejar preparado el punto único donde voy a añadir validaciones más complejas
-      cuando habilitemos creación, edición o lógica adicional.
+    Yo centralizo acá las reglas de negocio:
+    - Valido y normalizo inputs (p. ej., name sin espacios).
+    - Llamo al repo para persistencia/lectura (una sola fuente de verdad).
+    - Lanzo ValidationError con code='not_found' cuando corresponde, porque
+      mi custom_exception_handler lo mapea a HTTP 404.
     """
 
     def __init__(self, repo: Optional[CategoryRepository] = None) -> None:
-        # Inyecto el repositorio para favorecer testeo y desacoplar esta capa del ORM.
-        # Si no me pasan uno (tests/mocks), uso el repo real por defecto.
+        # Inyecto el repositorio para testear fácil; por defecto uso el real.
         self.repo = repo or CategoryRepository()
 
+    # =========================
+    # Lectura
+    # =========================
     def list_categories(
         self,
         *,
@@ -30,40 +34,90 @@ class CategoryService:
         order_by: Optional[str] = None,
     ) -> QuerySet[Category]:
         """
-        Devuelvo un QuerySet filtrado y ordenado de categorías.
-
-        Por qué devuelvo QuerySet y no una lista:
-        - El controller usa la paginación de DRF que trabaja sobre QuerySet de forma eficiente.
-        - Evito materializar todo en memoria si hay muchos registros.
-        - Mantengo lazy evaluation y dejo que la capa de presentación decida cuándo evaluar.
-
-        Parámetros:
-        - is_active: si viene, filtro por estado exacto (True/False).
-        - search: match por nombre con icontains (búsqueda parcial y case-insensitive).
-        - order_by: dejo ordenar por un subconjunto permitido que define el repositorio
-                    para evitar inyección de campos arbitrarios.
-
-        Flujo:
-        - El service no reimplementa filtros; delega al repo para mantener una sola fuente de verdad.
+        Devuelvo un QuerySet filtrado y ordenado. Mantengo lazy evaluation
+        porque la paginación de DRF trabaja mejor con QuerySets.
         """
         return self.repo.list(is_active=is_active, search=search, order_by=order_by)
 
     def get_category(self, pk: int) -> Category:
         """
-        Obtengo una categoría por su PK.
-
-        Comportamiento ante no encontrado:
-        - Si el repo devuelve None, levanto un ValidationError con code='not_found'.
-        - Nuestro custom_exception_handler mapea ese código a HTTP 404 automáticamente.
-        - Esto mantiene consistente la forma en que comunicamos "no encontrado" al front.
-
-        Nota:
-        - Prefiero usar ValidationError con code específico en lugar de lanzar NotFound
-          directamente aquí, porque centralizamos el formateo en el handler y mantenemos
-          un único contrato de errores para toda la API.
+        Obtengo una categoría por PK. Si no existe, levanto ValidationError con
+        code='not_found' para que el handler lo convierta en 404.
         """
         item = self.repo.get_by_id(pk)
         if not item:
-            # El code='not_found' es clave para que el handler lo convierta en 404.
             raise ValidationError("Category not found", code="not_found")
         return item
+
+    # =========================
+    # Escritura
+    # =========================
+    def _normalize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Yo normalizo campos comunes acá para no repetir en create/update.
+        - 'name': le hago strip si viene.
+        """
+        data = dict(payload) if payload else {}
+        if "name" in data and data["name"] is not None:
+            data["name"] = str(data["name"]).strip()
+        return data
+
+    def create_category(self, payload: Dict[str, Any]) -> Category:
+        """
+        Creo una categoría. Valido dominio con full_clean() antes de persistir.
+        - Si falta 'name' o viene vacío, full_clean() fallará si el modelo lo exige.
+        - Si hay unicidad a nivel DB (name único), capturo IntegrityError y lo traduzco.
+        """
+        data = self._normalize_payload(payload)
+
+        # Prevalido con un objeto temporal para ejecutar full_clean() sin tocar DB.
+        candidate = Category(**{k: v for k, v in data.items() if k in {f.name for f in Category._meta.fields}})
+        candidate.full_clean()  # levanta ValidationError si hay problemas de dominio
+
+        try:
+            return self.repo.create(data)
+        except IntegrityError as e:
+            # Traduzco conflictos comunes a un mensaje consistente.
+            msg = str(e).lower()
+            if "unique" in msg and "name" in msg:
+                raise ValidationError({"name": ["Category name must be unique."]})
+            raise
+
+    def update_category(self, pk: int, payload: Dict[str, Any]) -> Category:
+        """
+        Actualizo parcialmente una categoría. Aplico solo campos presentes.
+        - 404 si no existe.
+        - Valido con full_clean() antes de guardar.
+        """
+        instance = self.repo.get_by_id(pk)
+        if not instance:
+            raise ValidationError("Category not found", code="not_found")
+
+        data = self._normalize_payload(payload)
+
+        # Aplico solo claves conocidas del modelo (evito campos basura).
+        for field in {f.name for f in Category._meta.fields}:
+            if field in data and data[field] is not None:
+                setattr(instance, field, data[field])
+            # Si quisieras permitir setear None explícito para campos nullables,
+            # podés manejarlo acá (ej.: if field in data: setattr(...)).
+
+        # Valido antes de persistir
+        instance.full_clean()
+
+        try:
+            return self.repo.save(instance)
+        except IntegrityError as e:
+            msg = str(e).lower()
+            if "unique" in msg and "name" in msg:
+                raise ValidationError({"name": ["Category name must be unique."]})
+            raise
+
+    def delete_category(self, pk: int) -> None:
+        """
+        Borro la categoría. Si no existe, devuelvo 404 via ValidationError(not_found).
+        """
+        instance = self.repo.get_by_id(pk)
+        if not instance:
+            raise ValidationError("Category not found", code="not_found")
+        self.repo.delete(instance)

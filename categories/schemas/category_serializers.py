@@ -2,41 +2,69 @@
 """
 Serializers de Categories.
 
-Objetivo de este módulo:
-- Exponer un serializer de **lectura** con contrato estable para el front.
-- Mantener el conjunto de campos acotado a lo que realmente necesita la UI hoy.
-- Preparar el camino para agregar serializers de escritura (Create/Update)
-  sin romper el contrato de lectura que ya consume el cliente.
+Yo separo lectura de escritura para no romper el contrato del front:
+- CategoryReadSerializer: solo lectura (list/get).
+- CategoryCreateSerializer: validación de entrada para crear.
+- CategoryUpdateSerializer: validación de entrada para actualizar parcial/total.
 """
 
-# Importo DRF para construir serializers basados en el modelo.
 from rest_framework import serializers
-
-# Importo el modelo de dominio que voy a serializar.
 from categories.models.category import Category
 
 
 class CategoryReadSerializer(serializers.ModelSerializer):
     """
     Serializer de **lectura** (read-only) usado para listar y mostrar categorías.
-
-    Decisiones:
-    - Uso ModelSerializer para mapear campos 1:1 con el modelo sin lógica adicional.
-    - Expongo únicamente los campos necesarios para la UI actual.
-    - Marco todos los campos como read_only para dejar explícito que este serializer
-      NO se usa para crear/editar (evito usos incorrectos y cambios involuntarios).
     """
     class Meta:
-        # Especifico el modelo de origen para el mapeo automático de campos.
         model = Category
-
-        # Defino explícitamente los campos expuestos al cliente.
-        # Esto me da control total del contrato que consumirá el front.
         fields = ("id", "name", "is_active")
-
-        # Aclaro que estos campos no se escriben usando este serializer.
         read_only_fields = ("id", "name", "is_active")
 
 
-# Exporto explícitamente lo que quiero que se pueda importar desde este módulo.
-__all__ = ["CategoryReadSerializer"]
+class CategoryCreateSerializer(serializers.Serializer):
+    """
+    Yo uso este serializer para crear categorías. Mantengo el payload minimal:
+    - name: requerido, string no vacío (hago strip).
+    - is_active: opcional (default=True).
+    """
+    name = serializers.CharField(max_length=20)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+    def validate_name(self, value: str) -> str:
+        v = (value or "").strip()
+        if not v:
+            raise serializers.ValidationError("Name is required.")
+        return v
+
+    def create(self, validated_data):
+        # No creo en el serializer; delego en el service (single source of truth).
+        # DRF requiere este método, pero lo dejamos sin uso.
+        raise NotImplementedError("Use CategoryService to create categories.")
+
+
+class CategoryUpdateSerializer(serializers.Serializer):
+    """
+    Yo uso este serializer para actualizar categorías. Todo es opcional,
+    pero si mandan `name`, lo valido como en create.
+    """
+    name = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate_name(self, value: str) -> str:
+        # Permito null/blank en PATCH; si llega string, hago strip.
+        if value is None:
+            return value
+        v = value.strip()
+        # Si alguien manda "", lo interpreto como vacío explícito -> error;
+        # si preferís permitirlo y tratarlo como None, cambiamos esto.
+        if v == "":
+            raise serializers.ValidationError("Name cannot be empty.")
+        return v
+
+    def update(self, instance, validated_data):
+        # Igual que en create: no persisto acá; delego al service.
+        raise NotImplementedError("Use CategoryService to update categories.")
+
+
+__all__ = ["CategoryReadSerializer", "CategoryCreateSerializer", "CategoryUpdateSerializer"]
